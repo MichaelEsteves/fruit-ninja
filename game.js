@@ -1,9 +1,11 @@
 var lineSegments = [],
     maxLineSegments = 5,
     frequency = 3000, // milliseconds between waves
-    minFrequency = 1400,
+    minFrequency = 1200,
     maxTargets = 1,
     targetLimit = 6,
+    bombChance = 0,
+    maxBombChance = 0.6,
     nextWave = 0,
     currentWave = 0,
     waveReady = false,
@@ -12,7 +14,13 @@ var lineSegments = [],
     drops = [],
     splats = [],
     colors = [],
-    gravity;
+    start = false,
+    gameOver = false;
+    score = 0,
+    misses = 0,
+    bombPenalty = -10,
+    allowedMisses = 3,
+    gravity = 0;
 
 function setup() {
     frameRate(60);
@@ -30,6 +38,15 @@ function setup() {
 function draw() {
     background(255, 255, 255);
 
+    if (misses >= allowedMisses) {
+        start = false;
+
+        if (!gameOver) {
+            gameOver = true;
+            targets = [];
+        }
+    }
+
      // Draw splats
      for (let i = 0; i < splats.length; i++) {
         const splat = splats[i];
@@ -38,36 +55,32 @@ function draw() {
 
     drawMouseLine();
 
-    if (millis() > nextWave && !waveReady) {
-        waveReady = true;
-        nextWave = nextWave + frequency;
-    }
-
-    if (waveReady) {
-        // launch a wave
-        waveReady = false;
-        currentWave++;
-
-        // Update wave frequency every 5 waves
-        if (currentWave % 5 === 0) {
-            if (frequency > minFrequency) {
-                frequency = frequency - 100;
+    if (start) {
+        if (focused) {
+            if (millis() > nextWave && !waveReady) {
+                waveReady = true;
+                nextWave = millis() + frequency;
+            }
+        
+            if (waveReady) {
+                // launch a wave
+                newWave();
             }
         }
+    } else {
+        if (targets.length < 1) {
+            let startTarget = new target(windowWidth / 2, windowHeight / 2, random(colors));
+            startTarget.vel = createVector(0, 0);
+            startTarget.acc = createVector(0, 0);
+            startTarget.gravity = false;
+            startTarget.text = 'START';
+            startTarget.rotationSpeed = 0.5;
 
-        // Update number of targets every 3 waves
-        if (currentWave % 3 === 0) {
-            if (maxTargets < targetLimit) {
-                maxTargets++;
-            }
-        }
+            startTarget.onCut(function () {
+                newGame();
+            });
 
-        let buffer = windowWidth * 0.05;
-        let newTargets = random(1, maxTargets);
-
-        for (let i = 0; i < newTargets; i++) {
-            let x = random(buffer, windowWidth - buffer);
-            targets.push(new target(x, windowHeight, random(colors)));   
+            targets.push(startTarget);
         }
     }
 
@@ -114,37 +127,9 @@ function draw() {
         }
     }
 
-    // Remove old targets that have gone off screen or been cut
-    for (let i = 0; i < targets.length; i++) {
-        const target = targets[i];
-        if (target.pos.y > windowHeight + 50 || target.isCut == true) {
-            targets.splice(i, 1);
-        }
-    }
+    drawScores();
 
-    // Remove old offcuts that have gone off screen
-    for (let i = 0; i < offcuts.length; i++) {
-        const offcut = offcuts[i];
-        if (offcut.pos.y > windowHeight + 50) {
-            offcuts.splice(i, 1);
-        }
-    }
-
-    // Remove old juice that has gone off screen
-    for (let i = 0; i < drops.length; i++) {
-        const drop = drops[i];
-        if (drop.pos.y > windowHeight + 50) {
-            drops.splice(i, 1);
-        }
-    }
-
-    // Remove old splats that have gone transparent
-    for (let i = 0; i < splats.length; i++) {
-        const splat = splats[i];
-        if (splat.color.levels[3] <= 0) {
-            splats.splice(i, 1);
-        }
-    }
+    cleanup();
 }
 
 function drawMouseLine() {
@@ -179,4 +164,139 @@ function drawMouseLine() {
     strokeWeight(0);
 
     drawingContext.shadowBlur = 0;
+}
+
+function newWave() {
+    waveReady = false;
+    currentWave++;
+
+    // Update wave frequency every 5 waves
+    if (currentWave % 5 === 0) {
+        if (frequency > minFrequency) {
+            frequency = frequency - 100;
+        }
+    }
+
+    // Update number of targets every 3 waves
+    if (currentWave % 3 === 0) {
+        if (maxTargets < targetLimit) {
+            maxTargets++;
+        }
+    }
+
+    // update bomb chance every wave
+    if (bombChance < maxBombChance) {
+        bombChance = bombChance + 0.05;
+    }
+
+    let buffer = windowWidth * 0.05;
+    let newTargets = random(1, maxTargets);
+
+    for (let i = 0; i < newTargets; i++) {
+        let x = random(buffer, windowWidth - buffer);
+        let t = new target(x, windowHeight, random(colors));
+
+        t.rotationSpeed = random(-2, 2);
+        t.text = '+1';
+
+        t.onCut(function () {
+            score++;
+        });
+
+        targets.push(t);
+    }
+
+    // Add a bomb
+    let chance = random(0, 1);
+
+    if (bombChance > chance) {
+        let x = random(buffer, windowWidth - buffer);
+        let bomb = new target(x, windowHeight, color(0,0,0));
+
+        // bomb.hasOffcuts = false;
+        // bomb.hasSplat = false;
+        bomb.missable = false;
+        bomb.text = bombPenalty;
+        bomb.rotationSpeed = random(-2, 2);
+
+        bomb.onCut(function () {
+            score = score + bombPenalty;
+
+            if (score < 0) {
+                score = 0;
+            }
+        });
+
+        targets.push(bomb);
+    }
+}
+
+function cleanup() {
+    // Remove old targets that have gone off screen or been cut
+    for (let i = 0; i < targets.length; i++) {
+        const target = targets[i];
+        if (target.pos.y > windowHeight + 50 || target.isCut == true) {
+            targets.splice(i, 1);
+
+            if (!target.isCut && target.missable && misses < allowedMisses) {
+                misses++;
+            }
+        }
+    }
+
+    // Remove old offcuts that have gone off screen
+    for (let i = 0; i < offcuts.length; i++) {
+        const offcut = offcuts[i];
+        if (offcut.pos.y > windowHeight + 50) {
+            offcuts.splice(i, 1);
+        }
+    }
+
+    // Remove old juice that has gone off screen
+    for (let i = 0; i < drops.length; i++) {
+        const drop = drops[i];
+        if (drop.pos.y > windowHeight + 50) {
+            drops.splice(i, 1);
+        }
+    }
+
+    // Remove old splats that have gone transparent
+    for (let i = 0; i < splats.length; i++) {
+        const splat = splats[i];
+        if (splat.color.levels[3] <= 0) {
+            splats.splice(i, 1);
+        }
+    }
+}
+
+function drawScores() {
+    let scoreText = 'Score: ' + score;
+    let missesText = 'Misses: ' + misses + '/' + allowedMisses;
+    resetMatrix();
+    fill('black');
+    textSize(40);
+
+    textAlign(LEFT);
+    text(scoreText, 50, 50);
+
+    textAlign(RIGHT);
+    text(missesText, windowWidth - 50, 50);
+}
+
+function newGame()
+{
+    frequency = 3000;
+    maxTargets = 1;
+    nextWave = 0;
+    currentWave = 0;
+    waveReady = false;
+    targets = [];
+    offcuts = [];
+    drops = [];
+    splats = [];
+    start = true;
+    score = 0;
+    misses = 0;
+    bombChance = 0;
+    gameOver = false;
 }

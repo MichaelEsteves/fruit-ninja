@@ -15,13 +15,13 @@ class splat {
     {
         this.color = color(c.levels[0], c.levels[1], c.levels[2]);
 
-        let dropCount = random(10, 50);
+        let dropCount = random(10, 30);
 
         for (let i = 0; i < dropCount; i++) {
             this.drops.push({
                 x: random(x - 50, x + 50),
                 y: random(y - 50, y + 50),
-                size: random(2, 30),
+                size: random(2, 40),
             });
         }
     }
